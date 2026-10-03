@@ -1,0 +1,18 @@
+services:
+  agent:
+    build: .
+    image: lars-it-agent:latest
+    container_name: lars_it_agent
+    restart: unless-stopped
+    ports:
+      - "8089:8089"
+    environment:
+      - AGENT_PORT=8089
+      - AGENT_TOKEN=${AGENT_TOKEN}
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+    read_only: true
+    tmpfs:
+      - /tmp
