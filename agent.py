@@ -149,6 +149,45 @@ def get_uptime_info():
     }
 
 
+def get_services_info():
+    """Returns active service / Docker container count."""
+    # Check Docker containers if docker.sock is available
+    for sock in ["/var/run/docker.sock", "/host/root/var/run/docker.sock"]:
+        if os.path.exists(sock):
+            try:
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                s.settimeout(0.5)
+                s.connect(sock)
+                s.sendall(b"GET /containers/json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                raw = b""
+                while True:
+                    chunk = s.recv(4096)
+                    if not chunk:
+                        break
+                    raw += chunk
+                s.close()
+                if b"\r\n\r\n" in raw:
+                    _, body = raw.split(b"\r\n\r\n", 1)
+                    try:
+                        data = json.loads(body.decode("utf-8", errors="ignore"))
+                        if isinstance(data, list):
+                            return {"count": len(data), "label": "Container"}
+                    except Exception:
+                        import re
+                        matches = re.findall(rb'"Id":\s*"[a-f0-9]+"', body)
+                        if matches:
+                            return {"count": len(matches), "label": "Container"}
+            except Exception:
+                pass
+
+    # Fallback: Process count from /proc
+    try:
+        pids = [d for d in os.listdir(PROC_DIR) if d.isdigit()]
+        return {"count": len(pids), "label": "Dienste"}
+    except Exception:
+        return {"count": 0, "label": "Dienste"}
+
+
 def get_hostname():
     """Returns the host name."""
     hostname_file = os.path.join(PROC_DIR, "sys/kernel/hostname")
@@ -214,6 +253,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
         mem = get_memory_info()
         disk = get_disk_info()
         uptime = get_uptime_info()
+        srv = get_services_info()
         cores = os.cpu_count() or 1
         
         load = [0.0, 0.0, 0.0]
@@ -231,6 +271,8 @@ class MetricsHandler(BaseHTTPRequestHandler):
             "disk": disk,
             "uptime_seconds": uptime["seconds"],
             "uptime_text": uptime["text"],
+            "active_services": srv["count"],
+            "services_label": srv["label"],
             "load": load,
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
         }
